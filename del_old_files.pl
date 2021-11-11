@@ -12,17 +12,19 @@ my $par__recursive = $sn; $sn++;
 my $par__help = $sn; $sn++;
 my $par__parse_errors = $sn; $sn++;
 my $par__dry_run = $sn; $sn++;
+my $par__newer = $sn; $sn++;
 my $SLASH;
 my $ERROR_MESSAGES_DIVIDER = "|";
 
 sub help()
 {
-  print "del_old_files.pl [-v|--verbose] [-r|--recursive] [-d|--dry-run] <dir> <mask> <age[measure]>\n";
+  print "del_old_files.pl [-v|--verbose] [-r|--recursive] [-d|--dry-run] [-n|--newer] <dir> <mask> <age[measure]>\n";
   print "Delete from specified DIR files with specified MASK than older then AGE.\n";
   print "Allowed measures for AGE: s=seconds, m=minutes, h=hours, d=days, w=weeks, M=months, y=years (default are d - days)\n";
   print "  -v|--verbose\tdisplay deleting files\n";
   print "  -r|--recursive\twalk directories recursive\n";
   print "  -d|--dry-run\tdo not actually perform the deletion\n";
+  print "  -n|--newer\tdelete files that newer than specified age instead of old files (inverting)\n";
   print "\n";
 }
 
@@ -149,6 +151,7 @@ my @params = ();
   $params[$par__verbose] = 0;
   $params[$par__help] = 0;
   $params[$par__dry_run] = 0;
+  $params[$par__newer] = 0;
 
   $params[$par__dir] = undef;
   $params[$par__mask] = undef;
@@ -208,6 +211,10 @@ my @errors = ();
     }
     if ($elem eq "-d" || $elem =~ /^-+dry-run$/i) {
       $params[$par__dry_run] = 1;
+      next;
+    }
+    if ($elem eq "-n" || $elem =~ /^-+newer$/i) {
+      $params[$par__newer] = 1;
       next;
     }
     #if ($elem =~ /^-/) {
@@ -295,7 +302,7 @@ my $mask = shift;
 }
 
 #-------------------Удаление файлов согласно заданным параметром------------------
-sub delete_old_files
+sub delete_files
 {
 my $dir = shift;
 my $level = shift;
@@ -311,6 +318,7 @@ my $mtime;
 #my $time_diff;
 my $file_timestamp;
 my $space = "";
+my $delete;
 
   for (my $i=0; $i<$level; $i++) {
     $space .= "  ";
@@ -335,16 +343,29 @@ my $space = "";
     next if ($elem eq "..");
     $path = $dir . $SLASH . $elem;
     if ( -d $path && $params[$par__recursive]) {
-      delete_old_files($path, $level+1, @params);
+      delete_files($path, $level+1, @params);
       next;
     }
     # текущий объект - файл
     next if ($elem !~ /$mask/);
     $mtime = (stat($path))[9];
+    $delete = 0;
+    if ($params[$par__newer] == 0) {
+      # удалять старые файлы
+      if ($mtime < $params[$par__age]) {
+        $delete = 1;
+     }
+    }
+    else {
+      # удалять новые файлы
+      if ($mtime > $params[$par__age]) {
+        $delete = 1;
+     }
+    }
     #$time_diff = abs($mtime - $cur_unix_time);
     #if ($time_diff > $max_diff) {
-    if ($mtime < $params[$par__age]) {
-      #file too old
+    if ($delete) {
+      # файл подлежит удалению
       if ($params[$par__verbose]) {
         $file_timestamp = get_timestamp($mtime);
         print $space . "delete \"$path\" [$file_timestamp]\n";
@@ -359,6 +380,14 @@ my $space = "";
 sub print_params
 {
 my @params = @_;
+my $age_criteria;
+
+  if ($params[$par__newer]) {
+    $age_criteria = "newer";
+  }
+  else {
+    $age_criteria = "older";
+  }
 
   print "--- params: ---\n";
   print "verbose: $params[$par__verbose]\n";
@@ -366,8 +395,9 @@ my @params = @_;
   print "help: $params[$par__help]\n";
   print "dir: $params[$par__dir]\n";
   print "mask: $params[$par__mask__raw]\n";
-  print "age: $params[$par__age__raw] (" . get_timestamp($params[$par__age]) . ")\n";
+  print "age: $params[$par__age__raw] ( $age_criteria " . get_timestamp($params[$par__age]) . ")\n";
   print "dry-run: $params[$par__dry_run]\n";
+  print "newer: $params[$par__newer]\n";
   #print "parse_errors: params[$par__parse_errors]";
 
   if ($params[$par__parse_errors] ne "") {
@@ -405,4 +435,4 @@ if ($params[$par__parse_errors] ne "") {
 }
 
 print_params(@params) if ($params[$par__verbose]);
-delete_old_files($params[$par__dir], 0, @params);
+delete_files($params[$par__dir], 0, @params);
