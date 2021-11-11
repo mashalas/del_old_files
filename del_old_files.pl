@@ -17,8 +17,9 @@ my $ERROR_MESSAGES_DIVIDER = "|";
 
 sub help()
 {
-  print "del_old_files.pl [-v|--verbose] [-r|--recursive] [-d|--dry-run] <dir> <mask> <age>\n";
-  print "Delete from specified DIR files with specified MASK than older then AGE days.\n";
+  print "del_old_files.pl [-v|--verbose] [-r|--recursive] [-d|--dry-run] <dir> <mask> <age[measure]>\n";
+  print "Delete from specified DIR files with specified MASK than older then AGE.\n";
+  print "Allowed measures for AGE: s=seconds, m=minutes, h=hours, d=days, w=weeks, M=months, y=years (default are d - days)\n";
   print "  -v|--verbose\tdisplay deleting files\n";
   print "  -r|--recursive\twalk directories recursive\n";
   print "  -d|--dry-run\tdo not actually perform the deletion\n";
@@ -157,6 +158,32 @@ my @params = ();
   return @params;
 }
 
+sub parse_age
+{
+my $raw_age = shift;
+my $limit_time = -1;
+my ($value, $measure, $measure_size);
+my $current_time = time();
+
+  if ($raw_age =~ /^(\d+)([smhdwMy]?)$/) {
+    # указана единица измерения
+    $value = $1;
+    $value *= 1;
+    $measure = $2;
+    $measure = "d" if ($measure eq "");
+    #print "QQQ $raw_age $value $measure\n";
+
+    $limit_time = $current_time - $value if ($measure eq "s"); # seconds
+    $limit_time = $current_time - 60 * $value if ($measure eq "m"); # minutes
+    $limit_time = $current_time - 3600 * $value if ($measure eq "h"); # hours
+    $limit_time = $current_time - 3600*24 * $value if ($measure eq "d"); # days
+    $limit_time = $current_time - 3600*24*7 * $value if ($measure eq "w"); # weeks
+    $limit_time = $current_time - 3600*24*31 * $value if ($measure eq "M"); # months
+    $limit_time = $current_time - 3600*24*365 * $value if ($measure eq "y"); # years
+  }
+  return $limit_time;
+}
+
 #------------------------Разбор переданных параметров командной строки----------------------------
 sub parse_arguments
 {
@@ -200,12 +227,15 @@ my @errors = ();
     }
     if ($sn == 2) {
       $params[$par__mask__raw] = $elem;
-      $params[$par__mask] = files_mask_to_regular($params[$par__mask__raw]);
+      $params[$par__mask] = files_mask_to_regular($elem);
       next;
     }
     if ($sn == 3) {
       $params[$par__age__raw] = $elem;
-      $params[$par__age] = $elem;
+      $params[$par__age] = parse_age($elem);
+      if ($params[$par__age] < 0) {
+        $params[$par__parse_errors] = store_error($params[$par__parse_errors], "can not parse age");
+      }
       next;
     }
     
@@ -270,15 +300,15 @@ sub delete_old_files
 my $dir = shift;
 my $level = shift;
 my @params = @_;
-my $cur_unix_time = time();
-my $max_diff = 3600 * 24 * $params[$par__age];
+#my $cur_unix_time = time();
+#my $max_diff = 3600 * 24 * $params[$par__age];
 my $mask = $params[$par__mask];
 
 my $elem;
 my @files_and_dirs;
 my $path;
 my $mtime;
-my $time_diff;
+#my $time_diff;
 my $file_timestamp;
 my $space = "";
 
@@ -311,8 +341,9 @@ my $space = "";
     # текущий объект - файл
     next if ($elem !~ /$mask/);
     $mtime = (stat($path))[9];
-    $time_diff = abs($mtime - $cur_unix_time);
-    if ($time_diff > $max_diff) {
+    #$time_diff = abs($mtime - $cur_unix_time);
+    #if ($time_diff > $max_diff) {
+    if ($mtime < $params[$par__age]) {
       #file too old
       if ($params[$par__verbose]) {
         $file_timestamp = get_timestamp($mtime);
@@ -335,7 +366,7 @@ my @params = @_;
   print "help: $params[$par__help]\n";
   print "dir: $params[$par__dir]\n";
   print "mask: $params[$par__mask__raw]\n";
-  print "age: $params[$par__age__raw] ($params[$par__age])\n";
+  print "age: $params[$par__age__raw] (" . get_timestamp($params[$par__age]) . ")\n";
   print "dry-run: $params[$par__dry_run]\n";
   #print "parse_errors: params[$par__parse_errors]";
 
