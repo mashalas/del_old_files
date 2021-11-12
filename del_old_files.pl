@@ -1,5 +1,6 @@
 ﻿
 use strict;
+#use Time::Local 'timelocal';
 
 my $sn = 0;
 my $par__dir = $sn; $sn++;
@@ -20,7 +21,7 @@ sub help()
 {
   print "del_old_files.pl [-v|--verbose] [-r|--recursive] [-d|--dry-run] [-n|--newer] <dir> <mask> <age[measure]>\n";
   print "Delete from specified DIR files with specified MASK than older then AGE.\n";
-  print "Allowed measures for AGE: s=seconds, m=minutes, h=hours, d=days, w=weeks, M=months, y=years (default are d - days)\n";
+  print "Allowed measures for AGE: s=seconds, M=minutes, h=hours, d=days, w=weeks, m=months, y=years (default are d - days)\n";
   print "  -v|--verbose\tdisplay deleting files\n";
   print "  -r|--recursive\twalk directories recursive\n";
   print "  -d|--dry-run\tdo not actually perform the deletion\n";
@@ -81,57 +82,6 @@ my $result;
   return $result;
 }
 
-sub delete_old_files_v1
-{
-my $dir = shift;
-my $mask = shift;
-my $age = shift;
-my $CurUnixTime = time();
-my $MaxDiff = 3600 * 24 * $age;
-
-my $elem;
-my @files_and_dirs;
-my $path;
-my $mtime;
-my $TimeDiff;
-
-  #print "MaxDiff: $MaxDiff\n";
-
-  # *.txt	-> 	(.*?)\.txt
-  # *.tx*	->	(.*?)\.tx(.*?)
-  $mask =~ s/\./\\\./g;			#change of point
-  $mask =~ s/\*/\(\.\*\?\)/g;		#change of *
-  $mask = "^" . $mask . "\$";		#beginning and end of string
-
-
-  #get content of directory
-  opendir(DIR, $dir);
-  @files_and_dirs = readdir(DIR);
-  closedir(DIR);
-
-  #exclude . and ..
-  foreach $elem(@files_and_dirs) {
-    next if ($elem eq ".");
-    next if ($elem eq "..");
-    next if ($elem !~ /$mask/);
-    $path = $dir . "/" . $elem;
-    $mtime = (stat($path))[9];
-    $TimeDiff = abs($mtime - $CurUnixTime);
-    if ($TimeDiff > $MaxDiff) {
-      #file or directory too old
-      if (-d $path) {
-        #directory
-        #print "delete old directory $path\n";
-      }
-      else {
-        #file
-        #print "delete old file $path\n";
-        unlink($path);
-     }
-    }
-  }
-}
-
 #-------------------------Добавить в строку ещё одно сообщение об ошибке-----------------------------
 sub store_error
 {
@@ -143,6 +93,7 @@ my $result;
   return $result;
 }
 
+#----------------------------- Установить значения параметров по умолчанию ----------------------------
 sub set_default_params()
 {
 my @params = ();
@@ -161,6 +112,7 @@ my @params = ();
   return @params;
 }
 
+#---------------------------------------Разбор строки с возрастом файла-------------------------------
 sub parse_age
 {
 my $raw_age = shift;
@@ -169,20 +121,19 @@ my ($value, $measure, $measure_size);
 my $current_time = time();
 
   if ($raw_age =~ /^(\d+)([smhdwMy]?)$/) {
-    # указана единица измерения
+    # указано число и, возможно, единица измерения
     $value = $1;
     $value *= 1;
     $measure = $2;
     $measure = "d" if ($measure eq "");
-    #print "QQQ $raw_age $value $measure\n";
 
-    $limit_time = $current_time - $value if ($measure eq "s"); # seconds
-    $limit_time = $current_time - 60 * $value if ($measure eq "m"); # minutes
-    $limit_time = $current_time - 3600 * $value if ($measure eq "h"); # hours
-    $limit_time = $current_time - 3600*24 * $value if ($measure eq "d"); # days
-    $limit_time = $current_time - 3600*24*7 * $value if ($measure eq "w"); # weeks
-    $limit_time = $current_time - 3600*24*31 * $value if ($measure eq "M"); # months
-    $limit_time = $current_time - 3600*24*365 * $value if ($measure eq "y"); # years
+    $limit_time = $current_time - $value if ($measure eq "s" || $measure eq "S"); # seconds
+    $limit_time = $current_time - 60 * $value if ($measure eq "M"); # minutes
+    $limit_time = $current_time - 3600 * $value if ($measure eq "h" || $measure eq "H"); # hours
+    $limit_time = $current_time - 3600*24 * $value if ($measure eq "d" || $measure eq "D"); # days
+    $limit_time = $current_time - 3600*24*7 * $value if ($measure eq "w" || $measure eq "W"); # weeks
+    $limit_time = $current_time - 3600*24*31 * $value if ($measure eq "m"); # months
+    $limit_time = $current_time - 3600*24*365 * $value if ($measure eq "y" || $measure eq "Y"); # years
   }
   return $limit_time;
 }
@@ -258,32 +209,19 @@ my @errors = ();
   return @params;
 }
 
-sub check_params
+#---------------------------- Проверить, что указаны все обязательные параметры ------------------------------
+sub check_required_parameters
 {
 my @params = @_;
-my $ok = 1;
 
   if (!defined($params[$par__dir])){
     $params[$par__parse_errors] = store_error($params[$par__parse_errors], "directory is not defined");
-    #$params[$par__parse_errors] .= "directory is not defined|";
-    #print "ERROR: directory is not defined\n";
-    $ok = 0;
-    ##push($params[$par__parse_errors], "directory is not defined");
-    #$params[$par__parse_errors] .= "
   }
   if (!defined($params[$par__mask])){
     $params[$par__parse_errors] = store_error($params[$par__parse_errors], "mask is not defined");
-    #$params[$par__parse_errors] .= "mask is not defined|";
-    #print "ERROR: mask is not defined\n";
-    $ok = 0;
-    ##push($params[$par__parse_errors], "mask is not defined");
   }
   if (!defined($params[$par__age])){
     $params[$par__parse_errors] = store_error($params[$par__parse_errors], "age is not defined");
-    #$params[$par__parse_errors] .= "age is not defined|";
-    #print "ERROR: age is not defined\n";
-    $ok = 0;
-    ##push($params[$par__parse_errors], "age is not defined");
   }
   return @params;
 }
@@ -295,9 +233,10 @@ my $mask = shift;
 
   # *.txt	-> 	(.*?)\.txt
   # *.tx*	->	(.*?)\.tx(.*?)
-  $mask =~ s/\./\\\./g;			#change of point
-  $mask =~ s/\*/\(\.\*\?\)/g;		#change of *
-  $mask = "^" . $mask . "\$";		#beginning and end of string
+  $mask =~ s/\./\\\./g;			# замена точки в маске файла
+  $mask =~ s/\?/\./g;			# замена ? в маске файла
+  $mask =~ s/\*/\.\*\?/g;		# замена * в маске файла
+  $mask = "^" . $mask . "\$";		# beginning and end of string
   return $mask;
 }
 
@@ -307,18 +246,13 @@ sub delete_files
 my $dir = shift;
 my $level = shift;
 my @params = @_;
-#my $cur_unix_time = time();
-#my $max_diff = 3600 * 24 * $params[$par__age];
-my $mask = $params[$par__mask];
-
 my $elem;
 my @files_and_dirs;
 my $path;
 my $mtime;
-#my $time_diff;
 my $file_timestamp;
 my $space = "";
-my $delete;
+my $delete_flag;
 
   for (my $i=0; $i<$level; $i++) {
     $space .= "  ";
@@ -327,15 +261,10 @@ my $delete;
     print $space . "enter to $dir\n";
   }
 
-  #print "MaxDiff: $MaxDiff\n";
-
-
   #get content of directory
   opendir(DIR, $dir);
   @files_and_dirs = readdir(DIR);
   closedir(DIR);
-
-  #print "!$mask  $par__mask\n";
 
   foreach $elem(@files_and_dirs) {
     #exclude . and ..
@@ -343,35 +272,36 @@ my $delete;
     next if ($elem eq "..");
     $path = $dir . $SLASH . $elem;
     if ( -d $path && $params[$par__recursive]) {
+      # текущий элемент каталог и нужно пройти внутрь всех каталогов
       delete_files($path, $level+1, @params);
       next;
     }
     # текущий объект - файл
-    next if ($elem !~ /$mask/);
+    next if ($elem !~ /$params[$par__mask]/);
     $mtime = (stat($path))[9];
-    $delete = 0;
+    $delete_flag = 0;
     if ($params[$par__newer] == 0) {
       # удалять старые файлы
       if ($mtime < $params[$par__age]) {
-        $delete = 1;
+        $delete_flag = 1;
      }
     }
     else {
       # удалять новые файлы
       if ($mtime > $params[$par__age]) {
-        $delete = 1;
+        $delete_flag = 1;
      }
     }
-    #$time_diff = abs($mtime - $cur_unix_time);
-    #if ($time_diff > $max_diff) {
-    if ($delete) {
+    if ($delete_flag) {
       # файл подлежит удалению
-      if ($params[$par__verbose]) {
+      if ($params[$par__verbose] || $params[$par__dry_run]) {
         $file_timestamp = get_timestamp($mtime);
         print $space . "delete \"$path\" [$file_timestamp]\n";
       }
-      unlink($path) if (!$params[$par__dry_run]); # выключен режим эмуляции
-      print $space . ">>>delete \"$path\"\n" if ($params[$par__dry_run]); # включен режим эмуляции
+      if (!$params[$par__dry_run]) {
+        # выключен режим эмуляции - реальное удаление
+        unlink($path);
+      }
     }
   }
 }
@@ -411,6 +341,7 @@ my $age_criteria;
   print "---\n\n";
 }
 
+
 #-----------------------------------main----------------------------------
 if (-f "/etc/passwd") {
   $SLASH = "/";
@@ -424,11 +355,9 @@ if ($params[$par__help]) {
   help();
   exit(0);
 }
-@params = check_params(@params);
-#if (!$params_ok) {
-#if ($params[$par__parse_errors] != "ok") {
+@params = check_required_parameters(@params);
 if ($params[$par__parse_errors] ne "") {
-  # некорректные параметры
+  # есть ошибки в параметрах
   print_params(@params);
   help();
   die;
