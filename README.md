@@ -1,0 +1,1 @@
+Delete files older (or newer with special parameter) than specified amount of days, months, hours etc.
